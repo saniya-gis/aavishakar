@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Solapur Spatial & Environmental Dashboard</title>
+    
+    <!-- Leaflet & QGIS2Web Native Styles -->
+    <link rel="stylesheet" href="css/leaflet.css">
+    <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+    <link rel="stylesheet" href="css/qgis2web.css">
+    <link rel="stylesheet" href="css/fontawesome-all.min.css">
+    <link rel="stylesheet" href="css/leaflet.photon.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    
+    <!-- Custom Dashboard UI/UX Styles -->
+    <style>
+        :root {
+            --primary-bg: #ffffff;
+            --secondary-bg: #f4f7f6;
+            --accent-color: #0066cc;
+            --accent-hover: #004c99;
+            --text-dark: #2c3e50;
+            --text-muted: #7f8c8d;
+            --border-color: #e0e6ed;
+            --sidebar-width: 320px;
+            --header-height: 60px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        
+        body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--secondary-bg); }
+
+        /* Header Styles */
+        header {
+            height: var(--header-height);
+            background: var(--primary-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            z-index: 1000;
+        }
+        .brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 600; color: var(--text-dark); }
+        .brand i { color: var(--accent-color); font-size: 22px; }
+        .header-stats { display: flex; gap: 15px; font-size: 13px; color: var(--text-muted); }
+        .stat-badge { background: var(--secondary-bg); padding: 5px 12px; border-radius: 20px; font-weight: 600; }
+
+        /* Layout */
+        .dashboard-container { display: flex; flex: 1; height: calc(100vh - var(--header-height)); }
+
+        /* Sidebar Styles */
+        aside {
+            width: var(--sidebar-width);
+            background: var(--primary-bg);
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+            transition: 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            z-index: 999;
+        }
+        .sidebar-header { padding: 15px 20px; background: var(--secondary-bg); font-weight: 600; color: var(--text-dark); border-bottom: 1px solid var(--border-color); }
+        
+        .layer-group { border-bottom: 1px solid var(--border-color); }
+        .layer-group-title {
+            padding: 12px 20px;
+            background: #fafbfc;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .layer-item { padding: 12px 20px; display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--text-dark); transition: 0.2s; }
+        .layer-item:hover { background: var(--secondary-bg); cursor: pointer; }
+        
+        /* Custom Toggle Switch */
+        .toggle-switch {
+            position: relative; width: 36px; height: 20px; appearance: none;
+            background: #d1d5db; border-radius: 20px; outline: none; cursor: pointer; transition: 0.3s;
+        }
+        .toggle-switch:checked { background: var(--accent-color); }
+        .toggle-switch::after {
+            content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+            background: white; border-radius: 50%; transition: 0.3s;
+        }
+        .toggle-switch:checked::after { transform: translateX(16px); }
+
+        /* Radio Switch for Basemaps */
+        .radio-switch { accent-color: var(--accent-color); width: 16px; height: 16px; cursor: pointer; }
+
+        /* Map Container */
+        main { flex: 1; position: relative; }
+        #map { width: 100%; height: 100%; background: #e5e3df; }
+
+        /* Popup Styling - Attribute Card */
+        .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); padding: 0; overflow: hidden; }
+        .leaflet-popup-content { margin: 0; width: 280px !important; }
+        .popup-header { background: var(--accent-color); color: white; padding: 12px 15px; font-weight: 600; font-size: 14px; }
+        .leaflet-popup-content table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .leaflet-popup-content tr:nth-child(even) { background-color: #f9f9f9; }
+        .leaflet-popup-content td { padding: 8px 15px; border-bottom: 1px solid #eee; color: #444; }
+        .leaflet-popup-content td:first-child { font-weight: 600; color: #222; width: 40%; }
+        
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            aside { position: absolute; height: 100%; transform: translateX(-100%); }
+            aside.active { transform: translateX(0); }
+            .toggle-sidebar-btn { display: block !important; cursor: pointer; font-size: 20px; }
+        }
+        .toggle-sidebar-btn { display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- Top Header -->
+    <header>
+        <div class="brand">
+            <i class="fas fa-bars toggle-sidebar-btn" onclick="document.querySelector('aside').classList.toggle('active')"></i>
+            <i class="fas fa-map-marked-alt"></i> Solapur Web-GIS Dashboard
+        </div>
+        <div class="header-stats">
+            <span class="stat-badge"><i class="fas fa-layer-group"></i> 30 Data Layers</span>
+            <span class="stat-badge"><i class="fas fa-satellite"></i> 2025 Summer/Winter Index</span>
+        </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="dashboard-container">
+        <!-- Sidebar Custom UI -->
+        <aside id="sidebar">
+            <div class="sidebar-header">
+                Layer Catalog
+            </div>
+            <div id="layer-controls">
+                <!-- Groups will be injected here via JS -->
+            </div>
+        </aside>
+
+        <!-- Map Canvas -->
+        <main id="map-container">
+            <div id="map"></div>
+        </main>
+    </div>
+
+    <!-- Core Map Scripts -->
+    <script src="js/qgis2web_expressions.js"></script>
+    <script src="js/leaflet.js"></script>
+    <script src="js/L.Control.Layers.Tree.min.js"></script>
+    <script src="js/leaflet.rotatedMarker.js"></script>
+    <script src="js/leaflet.pattern.js"></script>
+    <script src="js/leaflet-hash.js"></script>
+    <script src="js/Autolinker.min.js"></script>
+    <script src="js/rbush.min.js"></script>
+    <script src="js/labelgun.min.js"></script>
+    <script src="js/labels.js"></script>
+    <script src="js/leaflet.photon.js"></script>
+
+    <!-- User Data Imports -->
+    <script src="data/solapur_villages_24.js"></script>
+    <script src="data/Export_Output_2_25.js"></script>
+    <script src="data/landuse_26.js"></script>
+    <script src="data/railway_27.js"></script>
+    <script src="data/road_28.js"></script>
+    <script src="data/water_line_29.js"></script>
+    <script src="data/water_poly_30.js"></script>
+
+    <script>
+        // 1. Map Initialization
+        var map = L.map('map', {
+            zoomControl: false, maxZoom: 28, minZoom: 1
+        }).fitBounds([[17.350, 75.525], [17.952, 76.235]]);
+        
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; Solapur GIS Dashboard');
+        
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        var bounds_group = new L.featureGroup([]);
+
+        // 2. Custom Popup Content Formatter
+        function removeEmptyRowsFromPopupContent(content, feature) {
+            var tempDiv = document.createElement('div');
+            tempDiv.innerHTML = content;
+            var rows = tempDiv.querySelectorAll('tr');
+            for (var i = 0; i < rows.length; i++) {
+                var td = rows[i].querySelector('td.visible-with-data');
+                var key = td ? td.id : '';
+                if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                    rows[i].parentNode.removeChild(rows[i]);
+                }
+            }
+            // Add custom header
+            var featureName = feature.properties['Vill_name'] || feature.properties['name'] || 'Feature Details';
+            return `<div class="popup-header"><i class="fas fa-info-circle"></i> ${featureName}</div>` + tempDiv.innerHTML;
+        }
+
+        // 3. Basemaps
+        map.createPane('pane_GoogleSatellite');
+        map.getPane('pane_GoogleSatellite').style.zIndex = 400;
+        var layer_GoogleSatellite = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleSatellite', opacity: 1.0, maxZoom: 28
+        });
+
+        map.createPane('pane_ESRIGray');
+        map.getPane('pane_ESRIGray').style.zIndex = 401;
+        var layer_ESRIGray = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+            pane: 'pane_ESRIGray', opacity: 1.0, maxZoom: 28
+        });
+        map.addLayer(layer_ESRIGray); // Default Basemap
+
+        // 4. Raster / Index Overlays Helper
+        function addImageOverlay(name, zIndex, imgPath, bounds) {
+            map.createPane('pane_' + name);
+            map.getPane('pane_' + name).style.zIndex = zIndex;
+            var layer = new L.imageOverlay(imgPath, bounds, {pane: 'pane_' + name});
+            bounds_group.addLayer(layer);
+            return layer;
+        }
+
+        var bounds1 = [[17.4812, 75.7100], [17.8585, 76.0873]];
+        var bounds2 = [[17.4991, 75.7279], [17.8046, 76.0423]];
+        var bounds3 = [[17.5069, 75.7363], [17.8044, 76.0403]];
+
+        var rasters = {
+            'CO_Carbon': addImageOverlay('co', 402, 'data/CO_Carbon_Monoxide_May_2025_2.png', bounds1),
+            'NO2_Nitrogen': addImageOverlay('no2', 403, 'data/NO2_Nitrogen_Dioxide_May_2025_3.png', bounds1),
+            'O3_Ozone': addImageOverlay('o3', 404, 'data/O3_Ozone_Total_Column_May_2025_4.png', bounds1),
+            'SO2_Sulphur': addImageOverlay('so2', 405, 'data/SO2_Sulphur_Dioxide_May_2025_5.png', bounds1),
+            'Night_UHI': addImageOverlay('nuhi', 406, 'data/night_uhi_2025_6.png', bounds2),
+            'Day_UHI': addImageOverlay('duhi', 407, 'data/day_uhi_2025_7.png', bounds3),
+            'NDVI_Winter': addImageOverlay('ndvi_w', 408, 'data/NDVI_winter_2025_8.png', bounds3),
+            'UTFVI_Summer': addImageOverlay('utfvi_s', 409, 'data/UTFVI_Summer_2025_9.png', bounds3),
+            'UTFVI_Winter': addImageOverlay('utfvi_w', 410, 'data/UTFVI_Winter_2025_10.png', bounds3),
+            'NDVI_Summer': addImageOverlay('ndvi_s', 411, 'data/NDVI_summer_2025_11.png', bounds3),
+            'NDBI_Summer': addImageOverlay('ndbi_s', 412, 'data/NDBI_summer_2025_12.png', bounds3),
+            'NDBI_Winter': addImageOverlay('ndbi_w', 413, 'data/NDBI_winter_2025_13.png', bounds3),
+            'NDWI_Winter': addImageOverlay('ndwi_w', 414, 'data/NDWI_Winter_2025_14.png', bounds3),
+            'NDWI_Summer': addImageOverlay('ndwi_s', 415, 'data/NDWI_Summer_2025_15.png', bounds3),
+            'SAVI_Winter': addImageOverlay('savi_w', 416, 'data/wintersavi_16.png', bounds3),
+            'SAVI_Summer': addImageOverlay('savi_s', 417, 'data/SUMMERsavi_17.png', bounds3),
+            'Emissivity_Summer': addImageOverlay('emi_s', 418, 'data/Surface_Emissivity_Summer_2025_18.png', bounds3),
+            'SAVI_Winter_2': addImageOverlay('savi_w2', 419, 'data/SAVI_Winter_2025_19.png', bounds3),
+            'SAVI_AprMay': addImageOverlay('savi_am', 420, 'data/SAVI_AprMay_2025_20.png', bounds3),
+            'Emissivity_Winter': addImageOverlay('emi_w', 421, 'data/Surface_Emissivity_Winter_2025_21.png', bounds3),
+            'Albedo_Summer': addImageOverlay('albedo_s', 422, 'data/Surface_Albedo_Summer_2025_22.png', bounds3),
+            'Albedo_Winter': addImageOverlay('albedo_w', 423, 'data/Surface_Albedo_Winter_2025_23.png', bounds3),
+        };
+
+        // 5. Vector Layers Helper
+        function createVectorLayer(jsonData, zIndex, paneName, baseColor, isFill) {
+            map.createPane('pane_' + paneName);
+            map.getPane('pane_' + paneName).style.zIndex = zIndex;
+            
+            var style = { pane: 'pane_' + paneName, opacity: 1, color: baseColor, weight: 1.5, fill: isFill, fillOpacity: 0.3, fillColor: baseColor };
+            
+            var layer = new L.geoJson(jsonData, {
+                pane: 'pane_' + paneName, style: style,
+                onEachFeature: function(feature, layer) {
+                    var tableRows = '';
+                    for (var key in feature.properties) {
+                        if (feature.properties[key] !== null) {
+                            tableRows += `<tr><td>${key}</td><td>${feature.properties[key]}</td></tr>`;
+                        }
+                    }
+                    var content = removeEmptyRowsFromPopupContent(`<table>${tableRows}</table>`, feature);
+                    layer.bindPopup(content, { maxHeight: 400 });
+                }
+            });
+            bounds_group.addLayer(layer);
+            return layer;
+        }
+
+        var vectors = {
+            'Villages': createVectorLayer(json_solapur_villages_24, 424, 'v24', '#e77148', false),
+            'Boundary': createVectorLayer(json_Export_Output_2_25, 425, 'v25', '#c43c39', false),
+            'Landuse': createVectorLayer(json_landuse_26, 426, 'v26', '#ff9e17', true),
+            'Railway': createVectorLayer(json_railway_27, 427, 'v27', '#987db7', false),
+            'Roads': createVectorLayer(json_road_28, 428, 'v28', '#e5b636', false),
+            'Water_Line': createVectorLayer(json_water_line_29, 429, 'v29', '#91522d', false),
+            'Water_Poly': createVectorLayer(json_water_poly_30, 430, 'v30', '#a47158', true),
+        };
+        
+        // Ensure core base layer is added
+        map.addLayer(vectors['Boundary']);
+
+        // 6. Dynamic Dashboard UI Control Builder
+        const dashboardLayers = [
+            {
+                group: "Base Maps",
+                type: "radio",
+                items: [
+                    { name: "ESRI Light Gray", layer: layer_ESRIGray, checked: true },
+                    { name: "Google Satellite", layer: layer_GoogleSatellite, checked: false }
+                ]
+            },
+            {
+                group: "Administrative & Infra",
+                type: "checkbox",
+                items: [
+                    { name: "Study Boundary", layer: vectors.Boundary, checked: true },
+                    { name: "Solapur Villages", layer: vectors.Villages, checked: false },
+                    { name: "Landuse", layer: vectors.Landuse, checked: false },
+                    { name: "Road Network", layer: vectors.Roads, checked: false },
+                    { name: "Railway", layer: vectors.Railway, checked: false },
+                    { name: "Water Bodies (Poly)", layer: vectors.Water_Poly, checked: false },
+                    { name: "Water Network (Line)", layer: vectors.Water_Line, checked: false }
+                ]
+            },
+            {
+                group: "Air Quality (May 2025)",
+                type: "checkbox",
+                items: [
+                    { name: "Carbon Monoxide (CO)", layer: rasters.CO_Carbon, checked: false },
+                    { name: "Nitrogen Dioxide (NO2)", layer: rasters.NO2_Nitrogen, checked: false },
+                    { name: "Ozone (O3)", layer: rasters.O3_Ozone, checked: false },
+                    { name: "Sulphur Dioxide (SO2)", layer: rasters.SO2_Sulphur, checked: false }
+                ]
+            },
+            {
+                group: "Urban Heat Island (UHI)",
+                type: "checkbox",
+                items: [
+                    { name: "Day UHI", layer: rasters.Day_UHI, checked: false },
+                    { name: "Night UHI", layer: rasters.Night_UHI, checked: false }
+                ]
+            },
+            {
+                group: "Spectral Indices (Summer)",
+                type: "checkbox",
+                items: [
+                    { name: "NDVI (Vegetation)", layer: rasters.NDVI_Summer, checked: false },
+                    { name: "NDWI (Water)", layer: rasters.NDWI_Summer, checked: false },
+                    { name: "NDBI (Built-up)", layer: rasters.NDBI_Summer, checked: false },
+                    { name: "SAVI", layer: rasters.SAVI_Summer, checked: false },
+                    { name: "UTFVI (Thermal)", layer: rasters.UTFVI_Summer, checked: false },
+                    { name: "Surface Emissivity", layer: rasters.Emissivity_Summer, checked: false },
+                    { name: "Surface Albedo", layer: rasters.Albedo_Summer, checked: false }
+                ]
+            },
+            {
+                group: "Spectral Indices (Winter)",
+                type: "checkbox",
+                items: [
+                    { name: "NDVI (Vegetation)", layer: rasters.NDVI_Winter, checked: false },
+                    { name: "NDWI (Water)", layer: rasters.NDWI_Winter, checked: false },
+                    { name: "NDBI (Built-up)", layer: rasters.NDBI_Winter, checked: false },
+                    { name: "SAVI", layer: rasters.SAVI_Winter, checked: false },
+                    { name: "UTFVI (Thermal)", layer: rasters.UTFVI_Winter, checked: false },
+                    { name: "Surface Emissivity", layer: rasters.Emissivity_Winter, checked: false },
+                    { name: "Surface Albedo", layer: rasters.Albedo_Winter, checked: false }
+                ]
+            }
+        ];
+
+        const container = document.getElementById('layer-controls');
+
+        dashboardLayers.forEach((group, gIndex) => {
+            let groupHtml = `<div class="layer-group">
+                <div class="layer-group-title">${group.group}</div>`;
+            
+            group.items.forEach((item, iIndex) => {
+                let id = `layer_${gIndex}_${iIndex}`;
+                
+                if (group.type === "radio") {
+                    groupHtml += `
+                    <label class="layer-item" for="${id}">
+                        <input type="radio" class="radio-switch basemap-radio" name="basemap" id="${id}" ${item.checked ? 'checked' : ''} data-g="${gIndex}" data-i="${iIndex}">
+                        ${item.name}
+                    </label>`;
+                } else {
+                    groupHtml += `
+                    <label class="layer-item" for="${id}">
+                        <input type="checkbox" class="toggle-switch" id="${id}" ${item.checked ? 'checked' : ''} data-g="${gIndex}" data-i="${iIndex}">
+                        ${item.name}
+                    </label>`;
+                }
+            });
+            groupHtml += `</div>`;
+            container.innerHTML += groupHtml;
+        });
+
+        // 7. Event Listeners for Custom Controls
+        document.querySelectorAll('#layer-controls input').forEach(input => {
+            input.addEventListener('change', function(e) {
+                let g = this.getAttribute('data-g');
+                let i = this.getAttribute('data-i');
+                let targetLayer = dashboardLayers[g].items[i].layer;
+
+                if (this.type === 'radio') {
+                    // Remove all basemaps first
+                    dashboardLayers[g].items.forEach(b => map.removeLayer(b.layer));
+                    if (this.checked) map.addLayer(targetLayer);
+                } else {
+                    // Checkbox toggle logic
+                    if (this.checked) {
+                        map.addLayer(targetLayer);
+                    } else {
+                        map.removeLayer(targetLayer);
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
